@@ -63,13 +63,16 @@ def extract(body: InvoiceRequest):
         if m:
             result["vendor"] = m.group(1).strip()
 
-    # Amount (subtotal): "Subtotal ... Rs. 2,199.00"
-    m = re.search(r"Subtotal[.\s:]*Rs\.?\s*([\d,]+\.\d{2})", text)
+    # Amount (subtotal): search only within the same line as the label
+    m = re.search(r"(?:Subtotal|Amount)[^\n]*?([\d][\d,]*(?:\.\d{1,2})?)", text, re.IGNORECASE)
     if m:
         result["amount"] = parse_amount(m.group(1))
 
-    # Tax: "GST (18%) ... Rs. 395.82" or "IGST (18%): Rs. 25,200.00"
-    m = re.search(r"(?:GST|IGST)[^R]*Rs\.?\s*([\d,]+\.\d{2})", text)
+    # Tax: skip past any "(18%)" style percentage, avoid matching "Tax Invoice" title
+    m = re.search(
+        r"(?:GST|IGST|CGST|SGST|VAT|Tax(?!\s*Invoice))\s*(?:\([^)]*\))?[^\n]*?([\d][\d,]*(?:\.\d{1,2})?)",
+        text, re.IGNORECASE
+    )
     if m:
         result["tax"] = parse_amount(m.group(1))
 
