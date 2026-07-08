@@ -68,9 +68,12 @@ def extract(body: InvoiceRequest):
     if m:
         result["amount"] = parse_amount(m.group(1))
 
-    # Tax: skip past any "(18%)" style percentage, avoid matching "Tax Invoice" title
+    # Tax: skip past any percentage (with or without parentheses), avoid "Tax Invoice" title
     m = re.search(
-        r"(?:GST|IGST|CGST|SGST|VAT|Tax(?!\s*Invoice))\s*(?:\([^)]*\))?[^\n]*?([\d][\d,]*(?:\.\d{1,2})?)",
+        r"(?:GST|IGST|CGST|SGST|VAT|Tax(?!\s*Invoice))"
+        r"(?:\s*\(?\s*\d+(?:\.\d+)?\s*%\s*\)?)?"   # optional percentage, e.g. "(18%)" or "18%"
+        r"[^\n\d]*"                                  # skip any non-digit chars (labels, colons, currency)
+        r"([\d][\d,]*(?:\.\d{1,2})?)",               # the actual amount
         text, re.IGNORECASE
     )
     if m:
