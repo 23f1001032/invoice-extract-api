@@ -54,8 +54,8 @@ def extract(body: InvoiceRequest):
     if m:
         result["date"] = parse_date(m.group(1))
 
-    # Vendor: "Vendor: XXX" or first line before "—" (e.g. "NovaSoft Solutions — Tax Invoice")
-    m = re.search(r"Vendor[:\s]+([^\n]+)", text)
+    # Vendor: try multiple common labels, then fall back to first line pattern
+    m = re.search(r"(?:Vendor|From|Sold By|Billed By|Company|Seller)[:\s]+([^\n]+)", text, re.IGNORECASE)
     if m:
         result["vendor"] = m.group(1).strip()
     else:
