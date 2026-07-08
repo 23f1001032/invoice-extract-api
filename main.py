@@ -79,9 +79,26 @@ def extract(body: InvoiceRequest):
     if m:
         result["tax"] = parse_amount(m.group(1))
 
-    # Currency: "Currency: INR"
-    m = re.search(r"Currency[:\s]+([A-Za-z]+)", text)
+    # Currency: explicit label first, then fall back to detecting symbols
+    m = re.search(r"Currency[:\s]+([A-Za-z]+)", text, re.IGNORECASE)
     if m:
-        result["currency"] = m.group(1).strip()
+        result["currency"] = m.group(1).strip().upper()
+    else:
+        symbol_map = {
+            "₹": "INR", "Rs.": "INR", "Rs": "INR",
+            "$": "USD",
+            "£": "GBP",
+            "€": "EUR",
+            "¥": "JPY",
+        }
+        for symbol, code in symbol_map.items():
+            if symbol in text:
+                result["currency"] = code
+                break
+        else:
+            # last resort: look for a bare 3-letter currency code like USD, GBP, EUR
+            m = re.search(r"\b(INR|USD|GBP|EUR|JPY|AUD|CAD)\b", text)
+            if m:
+                result["currency"] = m.group(1)
 
     return result
