@@ -54,14 +54,26 @@ def extract(body: InvoiceRequest):
     if m:
         result["date"] = parse_date(m.group(1))
 
-    # Vendor: try multiple common labels, then fall back to first line pattern
-    m = re.search(r"(?:Vendor|From|Sold By|Billed By|Company|Seller)[:\s]+([^\n]+)", text, re.IGNORECASE)
+    # Vendor: try multiple common labels first
+    m = re.search(
+        r"(?:Vendor|From|Sold By|Billed By|Bill From|Supplier|Company|Company Name|Seller|Issued By)"
+        r"[:\s]+([^\n]+)",
+        text, re.IGNORECASE
+    )
     if m:
         result["vendor"] = m.group(1).strip()
     else:
-        m = re.search(r"^([A-Za-z0-9 &]+)\s+—", text)
+        # Try "Name — Tax Invoice" style first line
+        m = re.search(r"^([A-Za-z0-9 &.]+?)\s+—", text)
         if m:
             result["vendor"] = m.group(1).strip()
+        else:
+            # Last resort: use the first non-empty line that isn't a generic header like "INVOICE"
+            for line in text.strip().splitlines():
+                line = line.strip()
+                if line and line.upper() not in ("INVOICE", "TAX INVOICE", "RECEIPT"):
+                    result["vendor"] = line
+                    break
 
     # Amount (subtotal): search only within the same line as the label
     m = re.search(r"(?:Subtotal|Amount)[^\n]*?([\d][\d,]*(?:\.\d{1,2})?)", text, re.IGNORECASE)
