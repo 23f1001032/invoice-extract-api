@@ -17,7 +17,6 @@ class InvoiceRequest(BaseModel):
     invoice_text: str
 
 def parse_amount(raw: str) -> float:
-    # Remove currency symbols, "Rs.", commas, spaces -> keep only digits and dot
     cleaned = re.sub(r"[^\d.]", "", raw)
     return float(cleaned)
 
@@ -63,12 +62,10 @@ def extract(body: InvoiceRequest):
     if m:
         result["vendor"] = m.group(1).strip()
     else:
-        # Try "Name — Tax Invoice" style first line
         m = re.search(r"^([A-Za-z0-9 &.]+?)\s+—", text)
         if m:
             result["vendor"] = m.group(1).strip()
         else:
-            # Last resort: use the first non-empty line that isn't a generic header like "INVOICE"
             for line in text.strip().splitlines():
                 line = line.strip()
                 if line and line.upper() not in ("INVOICE", "TAX INVOICE", "RECEIPT"):
@@ -80,16 +77,26 @@ def extract(body: InvoiceRequest):
     if m:
         result["amount"] = parse_amount(m.group(1))
 
-    # Tax: skip past any percentage (with or without parentheses), avoid "Tax Invoice" title
-    m = re.search(
-        r"(?:GST|IGST|CGST|SGST|VAT|Tax(?!\s*Invoice))"
-        r"(?:\s*\(?\s*\d+(?:\.\d+)?\s*%\s*\)?)?"   # optional percentage, e.g. "(18%)" or "18%"
-        r"[^\n\d]*"                                  # skip any non-digit chars (labels, colons, currency)
-        r"([\d][\d,]*(?:\.\d{1,2})?)",               # the actual amount
-        text, re.IGNORECASE
+    # Tax: handle CGST+SGST split (common in Indian invoices) by summing both
+    tax_pattern = (
+        r"{label}"
+        r"(?:\s*\(?\s*\d+(?:\.\d+)?\s*%\s*\)?)?"
+        r"[^\n\d]*"
+        r"([\d][\d,]*(?:\.\d{{1,2}})?)"
     )
-    if m:
-        result["tax"] = parse_amount(m.group(1))
+
+    cgst_match = re.search(tax_pattern.format(label="CGST"), text, re.IGNORECASE)
+    sgst_match = re.search(tax_pattern.format(label="SGST"), text, re.IGNORECASE)
+
+    if cgst_match and sgst_match:
+        result["tax"] = parse_amount(cgst_match.group(1)) + parse_amount(sgst_match.group(1))
+    else:
+        m = re.search(
+            tax_pattern.format(label=r"(?:GST|IGST|VAT|Tax(?!\s*Invoice))"),
+            text, re.IGNORECASE
+        )
+        if m:
+            result["tax"] = parse_amount(m.group(1))
 
     # Currency: explicit label first, then fall back to detecting symbols
     m = re.search(r"Currency[:\s]+([A-Za-z]+)", text, re.IGNORECASE)
@@ -108,7 +115,6 @@ def extract(body: InvoiceRequest):
                 result["currency"] = code
                 break
         else:
-            # last resort: look for a bare 3-letter currency code like USD, GBP, EUR
             m = re.search(r"\b(INR|USD|GBP|EUR|JPY|AUD|CAD)\b", text)
             if m:
                 result["currency"] = m.group(1)
